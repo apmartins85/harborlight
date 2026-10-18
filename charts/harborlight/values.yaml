@@ -10,9 +10,6 @@ services:
     url: http://ntfy.notifications.svc.cluster.local/v1/health
 #  - name: My API
 #    url: http://my-api.default.svc.cluster.local:8080/health
-dummy:
-  enabled: false
-  replicas: 1
 resources:
   requests:
     cpu: 25m
@@ -21,9 +18,3 @@ resources:
     cpu: 200m
     memory: 96Mi
 
-# Optional standalone image built from microservices/task-api/Dockerfile.
-# Empty image uses the Python runtime and mounted source (no build needed).
-taskApi:
-  enabled: false
-  image: ""
-  imagePullPolicy: IfNotPresent
