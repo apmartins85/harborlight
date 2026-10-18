@@ -1,0 +1,132 @@
+# Upstream images; no copied application source or build step.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: utilities
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: it-tools
+  namespace: utilities
+  labels: &id001
+    app.kubernetes.io/name: it-tools
+    app.kubernetes.io/part-of: harborlight-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: it-tools
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: it-tools
+        image: ghcr.io/corentinth/it-tools:2024.10.22-7ca5933
+        ports:
+        - name: http
+          containerPort: 80
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: it-tools
+  namespace: utilities
+  labels:
+    app.kubernetes.io/name: it-tools
+    app.kubernetes.io/part-of: harborlight-lab
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: it-tools
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cyberchef
+  namespace: utilities
+  labels: &id001
+    app.kubernetes.io/name: cyberchef
+    app.kubernetes.io/part-of: harborlight-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cyberchef
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - name: cyberchef
+        image: ghcr.io/gchq/cyberchef:11.5.0
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cyberchef
+  namespace: utilities
+  labels:
+    app.kubernetes.io/name: cyberchef
+    app.kubernetes.io/part-of: harborlight-lab
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: cyberchef
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
