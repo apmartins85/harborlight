@@ -18,3 +18,10 @@ resources:
   limits:
     cpu: 200m
     memory: 96Mi
+
+# Optional standalone image built from microservices/task-api/Dockerfile.
+# Empty image uses the Python runtime and mounted source (no build needed).
+taskApi:
+  enabled: true
+  image: ""
+  imagePullPolicy: IfNotPresent
