@@ -5,11 +5,13 @@ service:
   port: 80
   nodePort: 30080
 # Additional HTTP targets, reachable from inside the cluster.
-services: []
+services:
+  - name: ntfy notifications
+    url: http://ntfy.notifications.svc.cluster.local/v1/health
 #  - name: My API
 #    url: http://my-api.default.svc.cluster.local:8080/health
 dummy:
-  enabled: true
+  enabled: false
   replicas: 1
 resources:
   requests:
@@ -22,6 +24,6 @@ resources:
 # Optional standalone image built from microservices/task-api/Dockerfile.
 # Empty image uses the Python runtime and mounted source (no build needed).
 taskApi:
-  enabled: true
+  enabled: false
   image: ""
   imagePullPolicy: IfNotPresent
