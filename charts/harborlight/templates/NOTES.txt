@@ -1,0 +1,13 @@
+Harborlight has been installed in {{ .Release.Namespace }}.
+{{ if eq .Values.service.type "NodePort" }}
+In Killercoda, open Traffic / Ports and access {{ .Values.service.nodePort }}.
+{{ else }}
+Run: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "harborlight.name" . }} 8080:{{ .Values.service.port }}
+Then open http://localhost:8080.
+{{ end }}
+{{ if .Values.dummy.enabled }}
+Simulate an outage:
+  kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "harborlight.name" . }}-dummy --replicas=0
+Recover:
+  kubectl -n {{ .Release.Namespace }} scale deployment/{{ include "harborlight.name" . }}-dummy --replicas=1
+{{ end }}

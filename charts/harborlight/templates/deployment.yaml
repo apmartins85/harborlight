@@ -1,0 +1,75 @@
+{{- if and (not .Values.dummy.enabled) (not .Values.services) }}
+{{- fail "Enable dummy or configure at least one services entry" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "harborlight.name" . }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "harborlight.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "harborlight.name" . }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: status-page
+          image: {{ .Values.image | quote }}
+          command: ["python", "-B", "/app/app.py"]
+          env:
+            - name: CHECK_INTERVAL
+              value: {{ .Values.checkInterval | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: app
+          configMap:
+            name: {{ include "harborlight.name" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "harborlight.name" . }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: {{ include "harborlight.name" . }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
