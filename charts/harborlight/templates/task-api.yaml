@@ -1,0 +1,82 @@
+{{- if .Values.taskApi.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "harborlight.name" . }}-tasks
+data:
+  task-api.py: |
+{{ .Files.Get "files/task-api.py" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "harborlight.name" . }}-tasks
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "harborlight.name" . }}-tasks
+  template:
+    metadata:
+      labels:
+        app: {{ include "harborlight.name" . }}-tasks
+      annotations:
+        checksum/source: {{ .Files.Get "files/task-api.py" | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: task-api
+          image: {{ default .Values.image .Values.taskApi.image | quote }}
+          imagePullPolicy: {{ .Values.taskApi.imagePullPolicy }}
+          {{- if not .Values.taskApi.image }}
+          command: ["python", "-B", "/source/task-api.py"]
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 48Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+      volumes:
+        - name: source
+          configMap:
+            name: {{ include "harborlight.name" . }}-tasks
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "harborlight.name" . }}-tasks
+spec:
+  selector:
+    app: {{ include "harborlight.name" . }}-tasks
+  ports:
+    - port: 8080
+      targetPort: http
+{{- end }}
