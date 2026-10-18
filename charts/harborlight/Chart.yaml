@@ -1,0 +1,6 @@
+apiVersion: v2
+name: harborlight
+description: A tiny HTTP status page with an optional dummy application
+version: 0.1.0
+appVersion: "1.0.0"
+type: application

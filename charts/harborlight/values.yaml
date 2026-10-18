@@ -1,0 +1,20 @@
+image: python:3.12-alpine
+checkInterval: 15
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080
+# Additional HTTP targets, reachable from inside the cluster.
+services: []
+#  - name: My API
+#    url: http://my-api.default.svc.cluster.local:8080/health
+dummy:
+  enabled: true
+  replicas: 1
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 96Mi
