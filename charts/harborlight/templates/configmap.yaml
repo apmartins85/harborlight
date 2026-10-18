@@ -9,12 +9,6 @@ data:
 {{ .Files.Get "files/index.html" | indent 4 }}
   services.json: |
     [
-    {{- if .Values.taskApi.enabled }}
-      {"name": "Harborlight Tasks API", "url": "http://{{ include "harborlight.name" . }}-tasks:8080/healthz"}{{ if or .Values.dummy.enabled .Values.services }},{{ end }}
-    {{- end }}
-    {{- if .Values.dummy.enabled }}
-      {"name": "Demo application", "url": "http://{{ include "harborlight.name" . }}-dummy:8080/healthz"}{{ if .Values.services }},{{ end }}
-    {{- end }}
     {{- range $i, $target := .Values.services }}
       {{ if $i }},{{ end }}{{ $target | toJson }}
     {{- end }}
