@@ -2,255 +2,191 @@
 
 ![Harborlight pixel-art lighthouse](assets/harborlight-pixel.svg)
 
-A small lighthouse for your services: a lightweight status page that checks HTTP endpoints and shows availability and response times. Built with Python's standard library and plain HTML/CSS/JavaScript.
+A lightweight status page for real Kubernetes services. The main example deploys **ntfy**, an open-source notification server, using its published Helm chart. Harborlight checks ntfy over Kubernetes DNS and shows availability and response time.
 
-The Helm chart installs the dashboard **and a dummy application**. Use the dummy to practice outages and recovery in Killercoda, without a custom container build or external dependencies.
+## What runs
 
-## Deploy on Killercoda
+| Component | Helm release | Namespace | Purpose |
+| --- | --- | --- | --- |
+| ntfy | `ntfy` | `notifications` | Real HTTP publish/subscribe notification server |
+| Harborlight | `demo` | `harborlight` | Checks ntfy's `/v1/health` endpoint |
 
-1. Open a Kubernetes playground and confirm the cluster is ready:
+The two earlier demo services are disabled by default. Their source remains available as optional exercises.
+
+ntfy's [official installation guide](https://docs.ntfy.sh/install/#helm) documents the **community-maintained HelmForge chart**. It is not an official ntfy-maintained chart. This example pins chart version **1.6.2**, which specifies upstream image `binwiederhier/ntfy:v2.31.1`. Chart source: [helmforgedev/charts](https://github.com/helmforgedev/charts/tree/main/charts/ntfy). Application source: [binwiederhier/ntfy](https://github.com/binwiederhier/ntfy).
+
+## 1. Start Killercoda
+
+Open the [Kubernetes playground](https://killercoda.com/playgrounds/scenario/kubernetes), sign in, and start the environment. In its terminal:
 
 ```sh
 kubectl get nodes
 helm version
 ```
 
-If Helm is missing, install Helm using its official instructions: https://helm.sh/docs/intro/install/
+Both nodes should be ready. If Helm is missing, follow its [official installation instructions](https://helm.sh/docs/intro/install/).
 
-2. Clone this repository:
+## 2. Clone and deploy both applications
 
 ```sh
 git clone https://github.com/apmartins85/harborlight.git
 cd harborlight
+sh examples/ntfy/deploy.sh
 ```
 
-3. Install the chart (the command can also be used to upgrade):
+If you already cloned the repository, run `git pull` from its directory before deploying. The script installs ntfy from the upstream chart repository, then installs/upgrades Harborlight. `--reset-values` clears previous demo configuration and disables the old dummy and task API workloads.
+
+Equivalent commands:
 
 ```sh
+helm repo add helmforge https://repo.helmforge.dev --force-update
+helm repo update helmforge
+helm upgrade --install ntfy helmforge/ntfy --version 1.6.2 \
+  --namespace notifications --create-namespace \
+  -f examples/ntfy/values.yaml --wait --timeout 180s
 helm upgrade --install demo ./charts/harborlight \
   --namespace harborlight --create-namespace \
-  --wait --timeout 120s
+  --reset-values --wait --timeout 120s
+kubectl -n notifications get pods,svc
 kubectl -n harborlight get pods,svc
 ```
 
-4. In Killercoda, open **Traffic / Ports** and access port **30080**. Wait for the first check to show **Demo application — Operational**. The page polls the API every five seconds; the server checks services every 15 seconds.
+This lab disables ntfy persistence so it works without a storage provisioner. Its data disappears when the pod is replaced. The ntfy application is real; the deployment settings are intentionally temporary for Killercoda.
 
-The Kubernetes resources are named `demo-harborlight` (dashboard) and `demo-harborlight-dummy` (dummy app).
+## 3. Open Harborlight
 
-## Simulate an outage and recovery
+The default dashboard Service uses NodePort **30080**:
 
-Stop the dummy application:
+1. Open **☰ → Traffic / Ports** in the playground.
+2. Under **Host 1 → Custom Ports**, enter **30080**.
+3. Click **Access**. Harborlight opens in a separate tab.
+4. After the first check, **ntfy notifications** should show **Operational**.
 
-```sh
-kubectl -n harborlight scale deployment/demo-harborlight-dummy --replicas=0
-```
+Do not reuse another session's URL: Killercoda generates a new hostname for every environment.
 
-After pod termination and the next check, the dashboard should show it as unavailable (allow up to about one minute). Restore it:
+## 4. Port-forward Harborlight (alternative)
 
-```sh
-kubectl -n harborlight scale deployment/demo-harborlight-dummy --replicas=1
-kubectl -n harborlight rollout status deployment/demo-harborlight-dummy
-```
-
-After the pod is ready and the next health check completes, the dashboard returns to operational. A subsequent Helm upgrade resets the dummy replica count to the value in the chart (one by default).
-
-Inspect the dummy's response from inside the cluster:
+In a Killercoda terminal:
 
 ```sh
-kubectl -n harborlight exec deployment/demo-harborlight -- \
-  python -c 'import urllib.request; print(urllib.request.urlopen("http://demo-harborlight-dummy:8080/healthz").read().decode())'
+kubectl -n harborlight port-forward --address 0.0.0.0 svc/demo-harborlight 8080:80
 ```
 
-It returns JSON: `{"service": "demo-app", "status": "ok"}`. Both `/` and `/healthz` return HTTP 200; unknown paths return 404. Its Service stays internal to the cluster.
+Leave that terminal running. You should see `Forwarding from 0.0.0.0:8080 -> 8080`. Open **☰ → Traffic / Ports → Host 1 → 8080**. Use a second terminal for other commands. Ctrl+C stops forwarding.
 
-## Monitor your own services
+For an internal-only dashboard Service, first run:
+
+```sh
+helm upgrade demo ./charts/harborlight -n harborlight --set service.type=ClusterIP --wait
+```
+
+The forwarding command works with either Service type. `--address 0.0.0.0` lets the Killercoda proxy connect; outside this lab, omit it to bind only to localhost. If a pod restarts and the forward stops, rerun the command. Your computer's `localhost:8080` is not the remote playground; use **Traffic / Ports**.
+
+## 5. Open the real ntfy web app
+
+In a separate Killercoda terminal:
+
+```sh
+kubectl -n notifications port-forward --address 0.0.0.0 svc/ntfy 8082:80
+```
+
+Keep it running, then open **Traffic / Ports → Host 1 → Custom Ports → 8082 → Access**. The ntfy web interface opens. Subscribe to a topic named `harborlight-lab` on this instance. Browser notifications are optional; the topic page displays messages without enabling them.
+
+Publish a test message from inside the cluster. This request runs in the Harborlight pod so Kubernetes DNS resolves the ntfy Service:
+
+```sh
+kubectl -n harborlight exec deployment/demo-harborlight -- python -c \
+  'import urllib.request; r=urllib.request.Request("http://ntfy.notifications.svc.cluster.local/harborlight-lab",data=b"Hello from Kubernetes",headers={"Title":"Harborlight test"}); print(urllib.request.urlopen(r, timeout=5).read().decode())'
+```
+
+Or, while the ntfy port-forward is active, use `curl -d 'Hello from Kubernetes' http://localhost:8082/harborlight-lab` in another Killercoda terminal. This sends only to your lab instance, not the public ntfy.sh service.
+
+## 6. Test a real outage and recovery
+
+Stop ntfy:
+
+```sh
+kubectl -n notifications scale deployment/ntfy --replicas=0
+```
+
+After pod termination and the next check, Harborlight shows ntfy as unavailable. Allow up to about one minute. Restore it:
+
+```sh
+kubectl -n notifications scale deployment/ntfy --replicas=1
+kubectl -n notifications rollout status deployment/ntfy --timeout=120s
+```
+
+After readiness and the next check cycle, Harborlight returns to operational. Restart the ntfy port-forward if it stopped when its pod disappeared. The temporary ntfy message cache is lost when its pod is removed.
+
+## Screenshots from Killercoda
+
+### Application operational
+
+![Harborlight monitoring the real ntfy application](docs/screenshots/ntfy-up.jpg)
+
+### Application outage
+
+![Harborlight detecting an ntfy outage](docs/screenshots/ntfy-issue.jpg)
+
+Earlier screenshots of the original demo are retained in `docs/screenshots/service-up.jpg` and `service-issue.jpg`.
+
+## Monitor other services
 
 Create `my-values.yaml`:
 
 ```yaml
 dummy:
   enabled: false
+taskApi:
+  enabled: false
 services:
-  - name: Frontend
-    url: http://frontend.default.svc.cluster.local/
-  - name: API
-    url: http://api.default.svc.cluster.local:8080/health
+  - name: ntfy notifications
+    url: http://ntfy.notifications.svc.cluster.local/v1/health
+  - name: My API
+    url: http://my-api.default.svc.cluster.local:8080/health
 ```
-
-Apply your configuration:
 
 ```sh
-helm upgrade --install demo ./charts/harborlight \
-  --namespace harborlight --create-namespace \
-  -f my-values.yaml --wait --timeout 120s
+helm upgrade demo ./charts/harborlight -n harborlight -f my-values.yaml --wait
 ```
 
-URLs must be reachable from the dashboard pod. The checker follows redirects and considers final HTTP responses from 200 through 399 healthy. Each check has a three-second socket timeout. Changes to the ConfigMap trigger a rolling restart through its checksum annotation.
+Harborlight checks every 15 seconds by default, with a three-second socket timeout per target. The page refreshes every five seconds. HTTP 200–399 responses count as operational; redirects are followed. This measures HTTP availability, not delivery of notifications or database health, and does not inspect ntfy's JSON `healthy` field. The publish/receive exercise tests application behavior separately.
 
-## Useful chart settings
+## Optional custom Task API
 
-| Value | Default | Purpose |
-| --- | --- | --- |
-| `dummy.enabled` | `true` | Deploy and monitor the dummy app |
-| `dummy.replicas` | `1` | Dummy pod count |
-| `services` | `[]` | Additional named HTTP(S) targets |
-| `service.type` | `NodePort` | Dashboard Service type |
-| `service.nodePort` | `30080` | Port to open in Killercoda |
-| `checkInterval` | `15` | Seconds between completed check cycles; minimum 5 |
-| `image` | `python:3.12-alpine` | Python runtime image |
-| `resources` | See values.yaml | Dashboard CPU and memory requests/limits |
-
-Keep the default check interval for this lab. Results older than one minute are marked delayed. If port 30080 is already allocated, use `--set service.nodePort=30081` and open that port instead. For a second release, choose a different NodePort or use ClusterIP.
-
-## Port-forward on Killercoda (alternative to NodePort)
-
-1. In the Killercoda terminal, install or update the release with an internal Service:
-
-```sh
-helm upgrade --install demo ./charts/harborlight \
-  --namespace harborlight --create-namespace \
-  --set service.type=ClusterIP --wait --timeout 120s
-```
-
-2. Start a port-forward that the Killercoda web proxy can reach:
-
-```sh
-kubectl -n harborlight port-forward --address 0.0.0.0 svc/demo-harborlight 8080:80
-```
-
-Leave this terminal running. You should see `Forwarding from 0.0.0.0:8080 -> 8080`. Use a second terminal for other commands. Press Ctrl+C to stop forwarding.
-
-3. Open the **☰ menu** in the top-right of the playground and choose **Traffic / Ports**.
-4. On the **Traffic Port Accessor** page, find **Host 1** and click the common port **8080** (or type `8080` into its custom port field and click **Access**).
-5. The Harborlight page opens in another browser tab. Wait for **Demo application — Operational** after the first check.
-
-Do not use `localhost:8080` in your own browser for a remote Killercoda session: that points to your computer. Use the URL provided by Traffic / Ports. The URL changes with every playground session.
-
-For the default NodePort installation, no port-forward is needed: open the same **Traffic / Ports** page, enter **30080** under **Host 1 → Custom Ports**, and click **Access**.
-
-If you see a proxy error, confirm the forwarding command is still running, the port matches, and `kubectl -n harborlight get pods` shows ready pods. Port-forwarding can stop when its selected pod restarts; rerun the command if that happens. Outside a disposable lab, omit `--address 0.0.0.0` to bind only to localhost.
-
-## Screenshots from Killercoda
-
-### Service up
-
-The dummy application responds through its Kubernetes Service; Harborlight shows its response time and operational state.
-
-![Harborlight with the demo service operational](docs/screenshots/service-up.jpg)
-
-### Service unavailable
-
-After scaling the dummy Deployment to zero, Harborlight reports an unavailable service. Allow time for pod termination and the next health check; detection can take longer than 20 seconds.
-
-![Harborlight reporting a demo service outage](docs/screenshots/service-issue.jpg)
-
-## Run locally
-
-```sh
-python3 -B app.py
-```
-
-Open http://localhost:8080. The local `services.json` intentionally contains one healthy self-check and one unreachable endpoint. Helm uses its own generated configuration and the actual dummy Deployment instead.
-
-## Development and checks
-
-The chart includes copies of the dashboard source so it can be installed directly from a clone. After editing `app.py` or `index.html`, synchronize them before committing:
-
-```sh
-sh scripts/sync-chart.sh
-helm lint ./charts/harborlight
-helm template demo ./charts/harborlight --namespace harborlight > /tmp/harborlight.yaml
-```
-
-The original non-Helm lab deployment is available through `sh deploy.sh`; it uses `services.json` and does not install the dummy. Prefer Helm for the complete demo. Do not run both in the same cluster with the default NodePort.
-
-## Troubleshooting
-
-```sh
-kubectl -n harborlight get pods,svc,endpoints
-kubectl -n harborlight logs deployment/demo-harborlight
-kubectl -n harborlight describe pods
-```
-
-If image pulls fail, confirm the playground can reach Docker Hub. If a target is unavailable, check its Service name, namespace, port, and ready endpoints. The dashboard's own probes measure the dashboard server, so monitored outages do not restart it.
-
-## Remove the demo
-
-```sh
-helm uninstall demo --namespace harborlight
-```
-
-This removes the chart's workloads, Services, and ConfigMaps. The namespace remains.
-
-## Scope
-
-This is a small learning utility with current health snapshots: no stored history, uptime percentages, alerts, authentication, or database. The public API exposes service names and check results, but omits target URLs. Source files are mounted through ConfigMaps for a build-free lab; a production deployment should package them in a versioned image. Killercoda sessions are temporary; keep your changes in Git.
-
-## Open-source Task API microservice
-
-Harborlight includes an MIT-licensed task API in `microservices/task-api/`. It uses Python's standard library, runs as a non-root container, and is automatically deployed and monitored by the Helm chart. The original dummy app is still available for outage practice. The new Kubernetes Deployment and Service are named `demo-harborlight-tasks`.
-
-The default chart runs the Task API code inside the public Python container without needing a build. You can also build its standalone image using the Dockerfile below. To disable the API, set `taskApi.enabled=false`.
-
-### Use it on Killercoda
-
-Upgrade after pulling the latest code:
-
-```sh
-git pull
-helm upgrade --install demo ./charts/harborlight -n harborlight --create-namespace --wait --timeout 120s
-```
-
-The dashboard now monitors **Harborlight Tasks API** alongside **Demo application**.
-
-In a second Killercoda terminal, expose the Task API:
-
-```sh
-kubectl -n harborlight port-forward --address 0.0.0.0 svc/demo-harborlight-tasks 8081:8080
-```
-
-Keep forwarding running. Open **Traffic / Ports → Host 1 → Custom Ports → 8081 → Access**. The API root lists the available endpoints. Add `/tasks` to that URL to list tasks in the browser.
-
-From another Killercoda terminal, create and list tasks:
-
-```sh
-curl -i http://localhost:8081/healthz
-curl -i -X POST http://localhost:8081/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Deploy Harborlight on Kubernetes"}'
-curl http://localhost:8081/tasks
-```
-
-Copy the returned task `id` to delete it:
-
-```sh
-curl -X DELETE http://localhost:8081/tasks/REPLACE_WITH_TASK_ID
-```
-
-### Build a standalone container
-
-From the repository root, on a machine with Docker:
+The MIT-licensed create/list/delete API remains in `microservices/task-api/`, including its non-root Dockerfile. Enable it with `--set taskApi.enabled=true`; enable the original tiny dummy with `--set dummy.enabled=true`. Neither is enabled in the real-application scenario.
 
 ```sh
 docker build -t harborlight-tasks:0.1.0 ./microservices/task-api
 docker run --rm -p 8081:8080 --read-only --cap-drop ALL harborlight-tasks:0.1.0
+curl -H 'Content-Type: application/json' -d '{"title":"Try Kubernetes"}' http://localhost:8081/tasks
+curl http://localhost:8081/tasks
 ```
 
-For Kubernetes, tag and push it to a registry you control, replacing `YOUR_USER`:
+Task API data is in memory. Push the built image to a reachable registry before selecting it with `taskApi.image` in Kubernetes.
+
+## Development and troubleshooting
 
 ```sh
-docker tag harborlight-tasks:0.1.0 docker.io/YOUR_USER/harborlight-tasks:0.1.0
-docker push docker.io/YOUR_USER/harborlight-tasks:0.1.0
-helm upgrade --install demo ./charts/harborlight -n harborlight --create-namespace \
-  --set taskApi.image=docker.io/YOUR_USER/harborlight-tasks:0.1.0 --wait
+sh scripts/sync-chart.sh
+helm lint ./charts/harborlight
+helm template demo ./charts/harborlight -n harborlight > /tmp/harborlight.yaml
+kubectl -n harborlight logs deployment/demo-harborlight
+kubectl -n notifications logs deployment/ntfy
+kubectl -n notifications describe pods
 ```
 
-Use a public image for a build-free registry login experience in Killercoda, or configure image-pull credentials separately for a private registry. A local Docker build alone does not make the image available to the playground's container runtime.
+The source is mounted through ConfigMaps for a build-free lab. Chart configuration changes trigger a dashboard restart. Failed monitored checks do not restart Harborlight. If port 30080 is allocated, set `service.nodePort=30081` and open that port instead. Cluster image pulls require access to Docker Hub.
 
-### Behavior and limits
+## Cleanup
 
-Tasks live in memory and disappear when the API pod restarts. The chart runs one API replica so requests share the same task list. Input is limited to 200 characters per title, 4 KiB per request, and 1,000 tasks. It has no authentication; use disposable demo data. `/healthz` checks the HTTP process and is used by both Kubernetes probes and Harborlight. This is a functional learning microservice, not a persistent task management system.
+```sh
+helm uninstall demo -n harborlight
+helm uninstall ntfy -n notifications
+```
 
-### License
+Namespaces remain. Killercoda sessions are temporary. This lab has anonymous ntfy read/write access; use test messages only. Persistent storage, authentication, TLS, and backups should be configured for a lasting deployment.
 
-Harborlight and the included Task API are open source under the [MIT license](LICENSE). The runtime image contains components with their own upstream licenses.
+## Open-source licenses
+
+Harborlight and the optional Task API use the [MIT license](LICENSE). ntfy and the HelmForge chart are separate upstream projects; their own [application license](https://github.com/binwiederhier/ntfy) and [chart license](https://github.com/helmforgedev/charts) apply.
