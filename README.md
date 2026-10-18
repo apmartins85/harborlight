@@ -11,7 +11,7 @@ A lightweight status page for real Kubernetes services. The main example deploys
 | ntfy | `ntfy` | `notifications` | Real HTTP publish/subscribe notification server |
 | Harborlight | `demo` | `harborlight` | Checks ntfy's `/v1/health` endpoint |
 
-The two earlier demo services are disabled by default. Their source remains available as optional exercises.
+The repository contains only the dashboard and the real ntfy deployment example.
 
 ntfy's [official installation guide](https://docs.ntfy.sh/install/#helm) documents the **community-maintained HelmForge chart**. It is not an official ntfy-maintained chart. This example pins chart version **1.6.2**, which specifies upstream image `binwiederhier/ntfy:v2.31.1`. Chart source: [helmforgedev/charts](https://github.com/helmforgedev/charts/tree/main/charts/ntfy). Application source: [binwiederhier/ntfy](https://github.com/binwiederhier/ntfy).
 
@@ -34,7 +34,7 @@ cd harborlight
 sh examples/ntfy/deploy.sh
 ```
 
-If you already cloned the repository, run `git pull` from its directory before deploying. The script installs ntfy from the upstream chart repository, then installs/upgrades Harborlight. `--reset-values` clears previous demo configuration and disables the old dummy and task API workloads.
+If you already cloned the repository, run `git pull` from its directory before deploying. The script installs ntfy from the upstream chart repository, then installs/upgrades Harborlight. `--reset-values` clears settings from previous installations.
 
 Equivalent commands:
 
@@ -128,17 +128,11 @@ After readiness and the next check cycle, Harborlight returns to operational. Re
 
 ![Harborlight detecting an ntfy outage](docs/screenshots/ntfy-issue.jpg)
 
-Earlier screenshots of the original demo are retained in `docs/screenshots/service-up.jpg` and `service-issue.jpg`.
-
 ## Monitor other services
 
 Create `my-values.yaml`:
 
 ```yaml
-dummy:
-  enabled: false
-taskApi:
-  enabled: false
 services:
   - name: ntfy notifications
     url: http://ntfy.notifications.svc.cluster.local/v1/health
@@ -152,23 +146,9 @@ helm upgrade demo ./charts/harborlight -n harborlight -f my-values.yaml --wait
 
 Harborlight checks every 15 seconds by default, with a three-second socket timeout per target. The page refreshes every five seconds. HTTP 200–399 responses count as operational; redirects are followed. This measures HTTP availability, not delivery of notifications or database health, and does not inspect ntfy's JSON `healthy` field. The publish/receive exercise tests application behavior separately.
 
-## Optional custom Task API
-
-The MIT-licensed create/list/delete API remains in `microservices/task-api/`, including its non-root Dockerfile. Enable it with `--set taskApi.enabled=true`; enable the original tiny dummy with `--set dummy.enabled=true`. Neither is enabled in the real-application scenario.
-
-```sh
-docker build -t harborlight-tasks:0.1.0 ./microservices/task-api
-docker run --rm -p 8081:8080 --read-only --cap-drop ALL harborlight-tasks:0.1.0
-curl -H 'Content-Type: application/json' -d '{"title":"Try Kubernetes"}' http://localhost:8081/tasks
-curl http://localhost:8081/tasks
-```
-
-Task API data is in memory. Push the built image to a reachable registry before selecting it with `taskApi.image` in Kubernetes.
-
 ## Development and troubleshooting
 
 ```sh
-sh scripts/sync-chart.sh
 helm lint ./charts/harborlight
 helm template demo ./charts/harborlight -n harborlight > /tmp/harborlight.yaml
 kubectl -n harborlight logs deployment/demo-harborlight
@@ -176,7 +156,7 @@ kubectl -n notifications logs deployment/ntfy
 kubectl -n notifications describe pods
 ```
 
-The source is mounted through ConfigMaps for a build-free lab. Chart configuration changes trigger a dashboard restart. Failed monitored checks do not restart Harborlight. If port 30080 is allocated, set `service.nodePort=30081` and open that port instead. Cluster image pulls require access to Docker Hub.
+Edit the dashboard source directly in `charts/harborlight/files/app.py` and `index.html`. These are the only copies. The source is mounted through ConfigMaps for a build-free lab. Chart configuration changes trigger a dashboard restart. Failed monitored checks do not restart Harborlight. If port 30080 is allocated, set `service.nodePort=30081` and open that port instead. Cluster image pulls require access to Docker Hub.
 
 ## Cleanup
 
@@ -189,4 +169,4 @@ Namespaces remain. Killercoda sessions are temporary. This lab has anonymous ntf
 
 ## Open-source licenses
 
-Harborlight and the optional Task API use the [MIT license](LICENSE). ntfy and the HelmForge chart are separate upstream projects; their own [application license](https://github.com/binwiederhier/ntfy) and [chart license](https://github.com/helmforgedev/charts) apply.
+Harborlight uses the [MIT license](LICENSE). ntfy and the HelmForge chart are separate upstream projects; their own [application license](https://github.com/binwiederhier/ntfy) and [chart license](https://github.com/helmforgedev/charts) apply.
