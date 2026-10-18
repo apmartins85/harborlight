@@ -185,3 +185,72 @@ This removes the chart's workloads, Services, and ConfigMaps. The namespace rema
 ## Scope
 
 This is a small learning utility with current health snapshots: no stored history, uptime percentages, alerts, authentication, or database. The public API exposes service names and check results, but omits target URLs. Source files are mounted through ConfigMaps for a build-free lab; a production deployment should package them in a versioned image. Killercoda sessions are temporary; keep your changes in Git.
+
+## Open-source Task API microservice
+
+Harborlight includes an MIT-licensed task API in `microservices/task-api/`. It uses Python's standard library, runs as a non-root container, and is automatically deployed and monitored by the Helm chart. The original dummy app is still available for outage practice. The new Kubernetes Deployment and Service are named `demo-harborlight-tasks`.
+
+The default chart runs the Task API code inside the public Python container without needing a build. You can also build its standalone image using the Dockerfile below. To disable the API, set `taskApi.enabled=false`.
+
+### Use it on Killercoda
+
+Upgrade after pulling the latest code:
+
+```sh
+git pull
+helm upgrade --install demo ./charts/harborlight -n harborlight --create-namespace --wait --timeout 120s
+```
+
+The dashboard now monitors **Harborlight Tasks API** alongside **Demo application**.
+
+In a second Killercoda terminal, expose the Task API:
+
+```sh
+kubectl -n harborlight port-forward --address 0.0.0.0 svc/demo-harborlight-tasks 8081:8080
+```
+
+Keep forwarding running. Open **Traffic / Ports → Host 1 → Custom Ports → 8081 → Access**. The API root lists the available endpoints. Add `/tasks` to that URL to list tasks in the browser.
+
+From another Killercoda terminal, create and list tasks:
+
+```sh
+curl -i http://localhost:8081/healthz
+curl -i -X POST http://localhost:8081/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Deploy Harborlight on Kubernetes"}'
+curl http://localhost:8081/tasks
+```
+
+Copy the returned task `id` to delete it:
+
+```sh
+curl -X DELETE http://localhost:8081/tasks/REPLACE_WITH_TASK_ID
+```
+
+### Build a standalone container
+
+From the repository root, on a machine with Docker:
+
+```sh
+docker build -t harborlight-tasks:0.1.0 ./microservices/task-api
+docker run --rm -p 8081:8080 --read-only --cap-drop ALL harborlight-tasks:0.1.0
+```
+
+For Kubernetes, tag and push it to a registry you control, replacing `YOUR_USER`:
+
+```sh
+docker tag harborlight-tasks:0.1.0 docker.io/YOUR_USER/harborlight-tasks:0.1.0
+docker push docker.io/YOUR_USER/harborlight-tasks:0.1.0
+helm upgrade --install demo ./charts/harborlight -n harborlight --create-namespace \
+  --set taskApi.image=docker.io/YOUR_USER/harborlight-tasks:0.1.0 --wait
+```
+
+Use a public image for a build-free registry login experience in Killercoda, or configure image-pull credentials separately for a private registry. A local Docker build alone does not make the image available to the playground's container runtime.
+
+### Behavior and limits
+
+Tasks live in memory and disappear when the API pod restarts. The chart runs one API replica so requests share the same task list. Input is limited to 200 characters per title, 4 KiB per request, and 1,000 tasks. It has no authentication; use disposable demo data. `/healthz` checks the HTTP process and is used by both Kubernetes probes and Harborlight. This is a functional learning microservice, not a persistent task management system.
+
+### License
+
+Harborlight and the included Task API are open source under the [MIT license](LICENSE). The runtime image contains components with their own upstream licenses.
