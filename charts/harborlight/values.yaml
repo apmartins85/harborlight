@@ -8,8 +8,10 @@ service:
 services:
   - name: ntfy notifications
     url: http://ntfy.notifications.svc.cluster.local/v1/health
-#  - name: My API
-#    url: http://my-api.default.svc.cluster.local:8080/health
+  - name: IT-Tools
+    url: http://it-tools.utilities.svc.cluster.local/
+  - name: CyberChef
+    url: http://cyberchef.utilities.svc.cluster.local/
 resources:
   requests:
     cpu: 25m
