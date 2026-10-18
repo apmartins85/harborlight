@@ -1,5 +1,7 @@
 # Harborlight
 
+![Harborlight pixel-art lighthouse](assets/harborlight-pixel.svg)
+
 A small lighthouse for your services: a lightweight status page that checks HTTP endpoints and shows availability and response times. Built with Python's standard library and plain HTML/CSS/JavaScript.
 
 The Helm chart installs the dashboard **and a dummy application**. Use the dummy to practice outages and recovery in Killercoda, without a custom container build or external dependencies.
@@ -43,7 +45,7 @@ Stop the dummy application:
 kubectl -n harborlight scale deployment/demo-harborlight-dummy --replicas=0
 ```
 
-Within about 20 seconds, the dashboard should show it as unavailable. Restore it:
+After pod termination and the next check, the dashboard should show it as unavailable (allow up to about one minute). Restore it:
 
 ```sh
 kubectl -n harborlight scale deployment/demo-harborlight-dummy --replicas=1
@@ -100,16 +102,47 @@ URLs must be reachable from the dashboard pod. The checker follows redirects and
 
 Keep the default check interval for this lab. Results older than one minute are marked delayed. If port 30080 is already allocated, use `--set service.nodePort=30081` and open that port instead. For a second release, choose a different NodePort or use ClusterIP.
 
-## Deploy with ClusterIP
+## Port-forward on Killercoda (alternative to NodePort)
+
+1. In the Killercoda terminal, install or update the release with an internal Service:
 
 ```sh
 helm upgrade --install demo ./charts/harborlight \
   --namespace harborlight --create-namespace \
-  --set service.type=ClusterIP --wait
+  --set service.type=ClusterIP --wait --timeout 120s
+```
+
+2. Start a port-forward that the Killercoda web proxy can reach:
+
+```sh
 kubectl -n harborlight port-forward --address 0.0.0.0 svc/demo-harborlight 8080:80
 ```
 
-Keep that terminal running and open port 8080 in Killercoda. Outside a lab, omit `--address 0.0.0.0` to bind only to localhost.
+Leave this terminal running. You should see `Forwarding from 0.0.0.0:8080 -> 8080`. Use a second terminal for other commands. Press Ctrl+C to stop forwarding.
+
+3. Open the **☰ menu** in the top-right of the playground and choose **Traffic / Ports**.
+4. On the **Traffic Port Accessor** page, find **Host 1** and click the common port **8080** (or type `8080` into its custom port field and click **Access**).
+5. The Harborlight page opens in another browser tab. Wait for **Demo application — Operational** after the first check.
+
+Do not use `localhost:8080` in your own browser for a remote Killercoda session: that points to your computer. Use the URL provided by Traffic / Ports. The URL changes with every playground session.
+
+For the default NodePort installation, no port-forward is needed: open the same **Traffic / Ports** page, enter **30080** under **Host 1 → Custom Ports**, and click **Access**.
+
+If you see a proxy error, confirm the forwarding command is still running, the port matches, and `kubectl -n harborlight get pods` shows ready pods. Port-forwarding can stop when its selected pod restarts; rerun the command if that happens. Outside a disposable lab, omit `--address 0.0.0.0` to bind only to localhost.
+
+## Screenshots from Killercoda
+
+### Service up
+
+The dummy application responds through its Kubernetes Service; Harborlight shows its response time and operational state.
+
+![Harborlight with the demo service operational](docs/screenshots/service-up.jpg)
+
+### Service unavailable
+
+After scaling the dummy Deployment to zero, Harborlight reports an unavailable service. Allow time for pod termination and the next health check; detection can take longer than 20 seconds.
+
+![Harborlight reporting a demo service outage](docs/screenshots/service-issue.jpg)
 
 ## Run locally
 
